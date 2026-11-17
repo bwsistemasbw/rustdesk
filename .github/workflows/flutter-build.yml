@@ -331,6 +331,37 @@ jobs:
             exit 1
           fi
 
+      - name: Aplicar servidor personalizado
+        # O RustDesk atual nao le mais RENDEZVOUS_SERVER/RS_PUB_KEY na compilacao,
+        # entao gravamos os valores direto no codigo antes do build.
+        shell: bash
+        env:
+          RENDEZVOUS_SERVER: ${{ secrets.RENDEZVOUS_SERVER }}
+          RS_PUB_KEY: ${{ secrets.RS_PUB_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          p = "libs/hbb_common/src/config.rs"
+          s = open(p, encoding="utf-8").read()
+          srv = os.environ["RENDEZVOUS_SERVER"].strip()
+          key = os.environ["RS_PUB_KEY"].strip()
+          subs = [
+              ('PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("".to_owned());',
+               'PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("' + srv + '".to_owned());'),
+              ('pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.rustdesk.com"];',
+               'pub const RENDEZVOUS_SERVERS: &[&str] = &["' + srv + '"];'),
+              ('pub const RS_PUB_KEY: &str = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";',
+               'pub const RS_PUB_KEY: &str = "' + key + '";'),
+          ]
+          for old, new in subs:
+              if s.count(old) != 1:
+                  sys.exit("Trecho nao encontrado em " + p + ": " + old)
+              s = s.replace(old, new)
+          open(p, "w", encoding="utf-8").write(s)
+          print("config.rs alterado com sucesso")
+          PY
+          grep -n "PROD_RENDEZVOUS_SERVER: RwLock\|pub const RENDEZVOUS_SERVERS\|pub const RS_PUB_KEY" libs/hbb_common/src/config.rs | sed 's/"[^"]*"/"***"/'
+
       - name: Build rustdesk
         env:
           RENDEZVOUS_SERVER: ${{ secrets.RENDEZVOUS_SERVER }}
